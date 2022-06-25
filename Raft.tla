@@ -149,6 +149,11 @@ SingleMessages(msgs) == {m \in DOMAIN msgs : msgs[m] = 1}
 \* @type: (MESSAGE) => Bool;
 Send(m) == messages' = AppendMessage(m, messages)
 
+\* Remove a message from the bag of messages. Used when a server is done
+\* processing a message.
+\* @type: (MESSAGE) => Bool;
+Discard(m) == messages' = DropMessage(m, messages)
+
 \* Combination of Send and Discard
 \* @type: (MESSAGE, MESSAGE) => Bool;
 Reply(response, request) ==
@@ -245,6 +250,25 @@ HandleRequestVoteRequest(i, j, m) ==
        /\ ReplyRequestVote(i, j, m, grant)
        /\ UNCHANGED <<state, currentTerm, candidateVars, logVars>>
 
+\* Server i receives a RequestVote response from server j with
+\* m.mterm = currrentTerm[i].
+\* @type: (SERVER, SERVER, MESSAGE) => Bool;
+HandleRequestVoteResponse(i, j, m) ==
+    \* This tallies votes even when the current state is not Candidate, but
+    \* they won't be looked at, so it doesn't matter.
+    /\ m.mterm = currentTerm[i]
+    /\ votesResponded' = [votesResponded EXCEPT ![i] =
+                              votesResponded[i] \cup {j}]
+    /\ \/ /\ m.mvoteGranted
+          /\ votesGranted' = [votesGranted EXCEPT ![i] =
+                                  votesGranted[i] \cup {j}]
+          /\ voterLog' = [voterLog EXCEPT ![i] =
+                              voterLog[i] @@ (j :> m.mlog)]
+       \/ /\ ~m.mvoteGranted
+          /\ UNCHANGED <<votesGranted, voterLog>>
+    /\ Discard(m)
+    /\ UNCHANGED <<serverVars, logVars>>
+
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (SERVER, SERVER, MESSAGE) => Bool;
 UpdateTerm(i, j, m) ==
@@ -254,6 +278,13 @@ UpdateTerm(i, j, m) ==
     /\ votedFor' = [votedFor EXCEPT ![i] = {}]
        \* messages is unchanged so m can be processed further.
     /\ UNCHANGED <<messages, candidateVars, logVars>>
+
+\* Responses with stale terms are ignored.
+\* @type: (SERVER, SERVER, MESSAGE) => Bool;
+DropStaleResponse(i, j, m) ==
+    /\ m.mterm < currentTerm[i]
+    /\ Discard(m)
+    /\ UNCHANGED <<serverVars, candidateVars, logVars>>
 
 \* Receive a message.
 \* @type: (MESSAGE) => Bool;
@@ -265,6 +296,9 @@ Receive(m) ==
        \/ UpdateTerm(i, j, m)
        \/ /\ m.mtype = RequestVoteRequest
           /\ HandleRequestVoteRequest(i, j, m)
+       \/ /\ m.mtype = RequestVoteResponse
+          /\ \/ DropStaleResponse(i, j, m)
+             \/ HandleRequestVoteResponse(i, j, m)
 
 \* End of message handlers.
 ----
