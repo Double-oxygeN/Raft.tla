@@ -9,7 +9,7 @@
 \* Changes:
 \*   - Change the format
 \*   - Annotate types for Apalache
-\*   - Change the type of the variable `votedFor` from `Server \cup { Nil }` to `Seq(SERVER)`
+\*   - Change the codomain of the variable `votedFor` from `Server \cup { Nil }` to `Set(SERVER)`
 \*   - Use `clientRequest` instead of `v \in Value` (thanks to @jinlmsft)
 \*
 
@@ -45,7 +45,8 @@ CONSTANTS
 
 \* The type representing both requests and responses sent from a server.
 \* @typeAlias: MESSAGE = [mtype: MESSAGE_TYPE, mterm: Int, mlastLogIndex: Int,
-\*     mlastLogTerm: Int, msource: SERVER, mdest: SERVER];
+\*     mlastLogTerm: Int, mvoteGranted: Bool, mlog: Seq(LOG_ITEM),
+\*     msource: SERVER, mdest: SERVER];
 MSGTypeAliases == TRUE
 
 \* The type representing a log item.
@@ -72,7 +73,7 @@ VARIABLES
 
     \* The candidate the server voted for in its current term.
     \* If it hasn't voted for any, the value is empty.
-    \* @type: SERVER -> Seq(SERVER);
+    \* @type: SERVER -> Set(SERVER);
     votedFor
 
 serverVars == <<currentTerm, state, votedFor>>
@@ -127,9 +128,31 @@ AppendMessage(m, msgs) ==
     ELSE
         msgs @@ (m :> 1)
 
+\* Helper for Discard and Reply. Given a message m and bag of messages, return
+\* a new bag of messages with one less m in it.
+\* @type: (MESSAGE, MESSAGE -> Int) => MESSAGE -> Int;
+DropMessage(m, msgs) ==
+    IF m \in DOMAIN msgs THEN
+        [msgs EXCEPT ![m] = IF msgs[m] > 0 THEN msgs[m] - 1 ELSE 0]
+    ELSE
+        msgs
+
+\* Messages in a bag.
+\* @type: (MESSAGE -> Int) => Set(MESSAGE);
+MessagesInBag(msgs) == {m \in DOMAIN msgs : msgs[m] > 0}
+
+\* Messages whose multiplicity is one in a bag.
+\* @type: (MESSAGE -> Int) => Set(MESSAGE);
+SingleMessages(msgs) == {m \in DOMAIN msgs : msgs[m] = 1}
+
 \* Add a message to the bag of messages.
 \* @type: (MESSAGE) => Bool;
 Send(m) == messages' = AppendMessage(m, messages)
+
+\* Combination of Send and Discard
+\* @type: (MESSAGE, MESSAGE) => Bool;
+Reply(response, request) ==
+    messages' = DropMessage(request, AppendMessage(response, messages))
 
 ----
 \* Define initial values for all variables
@@ -140,7 +163,7 @@ InitHistoryVars == voterLog = [i \in Server |-> [j \in {} |-> <<>>]]
 \* @type: Bool;
 InitServerVars == /\ currentTerm = [i \in Server |-> 1]
                   /\ state = [i \in Server |-> Follower]
-                  /\ votedFor = [i \in Server |-> <<>>]
+                  /\ votedFor = [i \in Server |-> {}]
 
 \* @type: Bool;
 InitCandidateVars == /\ votesResponded = [i \in Server |-> {}]
@@ -165,14 +188,14 @@ Timeout(i) == /\ state[i] \in {Follower, Candidate}
               /\ currentTerm' = [currentTerm EXCEPT ![i] = currentTerm[i] + 1]
               \* Most implementations would probably just set the local vote
               \* atomically, but messaging localhost for it is weaker.
-              /\ votedFor' = [votedFor EXCEPT ![i] = <<>>]
+              /\ votedFor' = [votedFor EXCEPT ![i] = {}]
               /\ votesResponded' = [votesResponded EXCEPT ![i] = {}]
               /\ votesGranted'   = [votesGranted EXCEPT ![i] = {}]
               /\ voterLog'       = [voterLog EXCEPT ![i] = [j \in {} |-> <<>>]]
               /\ UNCHANGED <<messages, logVars>>
 
 \* @type: (SERVER, SERVER) => Bool;
-SendRequestVoteRequest(src, dest) ==
+SendRequestVote(src, dest) ==
     Send([mtype |-> RequestVoteRequest,
           mterm |-> currentTerm[src],
           mlastLogIndex |-> Len(log[src]),
@@ -184,14 +207,72 @@ SendRequestVoteRequest(src, dest) ==
 RequestVote(i, j) ==
     /\ state[i] = Candidate
     /\ j \notin votesResponded[i]
-    /\ SendRequestVoteRequest(i, j)
+    /\ SendRequestVote(i, j)
     /\ UNCHANGED <<serverVars, candidateVars, logVars>>
 
+----
+\* Message handlers
+\* i = recipient, j = sender, m = message
+
+ReplyRequestVote(src, dest, msg, grant) ==
+    Reply([mtype |-> RequestVoteResponse,
+           mterm |-> currentTerm[src],
+           mvoteGranted |-> grant,
+           mlog |-> log[src],
+           msource |-> src,
+           mdest |-> dest],
+           msg)
+
+\* Server i receives a RequestVote request from server j with
+\* m.mterm <= currentTerm[i].
+\* @type: (SERVER, SERVER, MESSAGE) => Bool;
+HandleRequestVoteRequest(i, j, m) ==
+    LET logOk ==
+            \* The voter i agree with the vote when the
+            \* candidate's log is up-to-date for the voter;
+            \* see Section 5.4.1.
+            \/ m.mlastLogTerm > LastTerm(log[i])
+            \/ /\ m.mlastLogTerm = LastTerm(log[i])
+               /\ m.mlastLogIndex >= Len(log[i])
+        grant == /\ m.mterm = currentTerm[i]
+                 /\ logOk
+                 \* The first-come-first-served basis
+                 /\ votedFor[i] \in {{}, {j}}
+    IN \* When m.mterm > currentTerm[i], first update the voter's term
+       /\ m.mterm <= currentTerm[i]
+       /\ \/ grant  /\ votedFor' = [votedFor EXCEPT ![i] = votedFor[i] \cup {j}]
+          \/ ~grant /\ UNCHANGED votedFor
+       /\ ReplyRequestVote(i, j, m, grant)
+       /\ UNCHANGED <<state, currentTerm, candidateVars, logVars>>
+
+\* Any RPC with a newer term causes the recipient to advance its term first.
+\* @type: (SERVER, SERVER, MESSAGE) => Bool;
+UpdateTerm(i, j, m) ==
+    /\ m.mterm > currentTerm[i]
+    /\ currentTerm' = [currentTerm EXCEPT ![i] = m.mterm]
+    /\ state' = [state EXCEPT ![i] = Follower]
+    /\ votedFor' = [votedFor EXCEPT ![i] = {}]
+       \* messages is unchanged so m can be processed further.
+    /\ UNCHANGED <<messages, candidateVars, logVars>>
+
+\* Receive a message.
+\* @type: (MESSAGE) => Bool;
+Receive(m) ==
+    LET i == m.mdest
+        j == m.msource
+    IN \* Any RPC with a newer term causes the recipient to advance
+       \* its term first. Responses with stale terms are ignored.
+       \/ UpdateTerm(i, j, m)
+       \/ /\ m.mtype = RequestVoteRequest
+          /\ HandleRequestVoteRequest(i, j, m)
+
+\* End of message handlers.
 ----
 \* Defines how the variables may transition.
 \* @type: Bool;
 Next == \/ \E i \in Server : Timeout(i)
         \/ \E i,j \in Server : RequestVote(i, j)
+        \/ \E m \in MessagesInBag(messages) : Receive(m)
 
 \* The specification must start with the initial state and transition according
 \* to Next.

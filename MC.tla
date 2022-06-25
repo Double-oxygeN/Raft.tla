@@ -36,7 +36,7 @@ VARIABLES
     \* @type: SERVER -> STATE;
     state,
 
-    \* @type: SERVER -> Seq(SERVER);
+    \* @type: SERVER -> Set(SERVER);
     votedFor
 
 VARIABLES
