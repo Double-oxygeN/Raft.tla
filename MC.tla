@@ -16,12 +16,29 @@ Candidate == "Candidate_OF_STATE"
 \* @type: STATE;
 Leader == "Leader_OF_STATE"
 
-VARIABLES
+VARIABLE
     \* @type: MESSAGE -> Int;
-    messages,
+    messages
+
+VARIABLES
+    \* @type: SERVER -> Int;
+    currentTerm,
 
     \* @type: SERVER -> STATE;
-    state
+    state,
+
+    \* @type: SERVER -> Seq(SERVER);
+    votedFor
+
+VARIABLES
+    \* @type: SERVER -> Set(SERVER);
+    votesResponded,
+
+    \* @type: SERVER -> Set(SERVER);
+    votesGranted,
+
+    \* @type: SERVER -> SERVER -> Seq(LOG_ITEM);
+    voterLog
 
 INSTANCE Raft
 ====
