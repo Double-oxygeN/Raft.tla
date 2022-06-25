@@ -12,7 +12,7 @@ Before running the script, install Apalache according to [the instructions](http
 Run the script:
 
 ```sh
-apalache check MC
+apalache check --config=MC.cfg MC
 ```
 
 ### Invariants
