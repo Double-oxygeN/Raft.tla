@@ -53,11 +53,24 @@ MSGTypeAliases == TRUE
 \* @typeAlias: LOG_ITEM = [term: Int];
 LITypeAliases == TRUE
 
+\* The type representing a history of election.
+\* @typeAlias: ELECTION = [eterm: Int, eleader: SERVER, elog: Seq(LOG_ITEM),
+\*     evotes: Set(SERVER), evoterLog: SERVER -> Seq(LOG_ITEM)];
+ELETypeAliases == TRUE
+
 VARIABLES
     \* A bag of records representing requests and responses sent from one server
     \* to another.
     \* @type: MESSAGE -> Int;
-    messages
+    messages,
+
+    \* A history variable used in the proof. This would not be present in an
+    \* implementation.
+    \* Keeps track of successful elections, including the initial logs of the
+    \* leader and voters' logs. Set of functions containing various things about
+    \* successful elections (see BecomeLeader).
+    \* @type: Set(ELECTION);
+    elections
 
 ----
 \* The following variables are all per server.
@@ -107,13 +120,31 @@ VARIABLES
 
 candidateVars == <<votesResponded, votesGranted, voterLog>>
 
+\* The following variables are used only on leaders:
+VARIABLES
+    \* The next entry to send to each follower.
+    \* @type: SERVER -> SERVER -> Int;
+    nextIndex,
+
+    \* The latest entry that each follower has acknowledged is the same as the
+    \* leader's. This is used to calculate commitIndex on the leader.
+    \* @type: SERVER -> SERVER -> Int;
+    matchIndex
+
+leaderVars == <<nextIndex, matchIndex, elections>>
+
 ----
 
 \* All variables; used for stuttering (asserting state hasn't changed).
-vars == <<messages, serverVars, candidateVars, logVars>>
+vars == <<messages, serverVars, candidateVars, leaderVars, logVars>>
 
 ----
 \* Helpers
+
+\* The set of all quorums. This just calculates simple majorities, but the only
+\* important property is that every quorum overlaps with every other.
+\* @type: Set(Set(SERVER));
+Quorum == {i \in SUBSET Server : Cardinality(i) * 2 > Cardinality(Server)}
 
 \* The term of the last entry in a log, or 0 if the log is empty.
 \* @type: (Seq(LOG_ITEM)) => Int;
@@ -163,7 +194,8 @@ Reply(response, request) ==
 \* Define initial values for all variables
 
 \* @type: Bool;
-InitHistoryVars == voterLog = [i \in Server |-> [j \in {} |-> <<>>]]
+InitHistoryVars == /\ elections = {}
+                   /\ voterLog = [i \in Server |-> [j \in {} |-> <<>>]]
 
 \* @type: Bool;
 InitServerVars == /\ currentTerm = [i \in Server |-> 1]
@@ -174,6 +206,13 @@ InitServerVars == /\ currentTerm = [i \in Server |-> 1]
 InitCandidateVars == /\ votesResponded = [i \in Server |-> {}]
                      /\ votesGranted   = [i \in Server |-> {}]
 
+\* The values nextIndex[i][i] and matchIndex[i][i] are never read, since the
+\* leader does not send itself messages. It's still easier to include these
+\* in the functions.
+\* @type: Bool;
+InitLeaderVars == /\ nextIndex = [i \in Server |-> [j \in Server |-> 1]]
+                  /\ matchIndex = [i \in Server |-> [j \in Server |-> 0]]
+
 \* @type: Bool;
 InitLogVars == log = [i \in Server |-> <<>>]
 
@@ -182,6 +221,7 @@ Init == /\ messages = [m \in {} |-> 0]
         /\ InitHistoryVars
         /\ InitServerVars
         /\ InitCandidateVars
+        /\ InitLeaderVars
         /\ InitLogVars
 
 ----
@@ -197,7 +237,7 @@ Timeout(i) == /\ state[i] \in {Follower, Candidate}
               /\ votesResponded' = [votesResponded EXCEPT ![i] = {}]
               /\ votesGranted'   = [votesGranted EXCEPT ![i] = {}]
               /\ voterLog'       = [voterLog EXCEPT ![i] = [j \in {} |-> <<>>]]
-              /\ UNCHANGED <<messages, logVars>>
+              /\ UNCHANGED <<messages, leaderVars, logVars>>
 
 \* @type: (SERVER, SERVER) => Bool;
 SendRequestVote(src, dest) ==
@@ -213,7 +253,25 @@ RequestVote(i, j) ==
     /\ state[i] = Candidate
     /\ j \notin votesResponded[i]
     /\ SendRequestVote(i, j)
-    /\ UNCHANGED <<serverVars, candidateVars, logVars>>
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars>>
+
+\* Candidate i transitions to leader.
+\* @type: (SERVER) => Bool;
+BecomeLeader(i) ==
+    /\ state[i] = Candidate
+    /\ votesGranted[i] \in Quorum
+    /\ state' = [state EXCEPT ![i] = Leader]
+    /\ nextIndex' = [nextIndex EXCEPT ![i] =
+                        [j \in Server |-> Len(log[i]) + 1]]
+    /\ matchIndex' = [matchIndex EXCEPT ![i] =
+                        [j \in Server |-> 0]]
+    /\ elections' = elections \cup
+                        {[eterm |-> currentTerm[i],
+                          eleader |-> i,
+                          elog |-> log[i],
+                          evotes |-> votesGranted[i],
+                          evoterLog |-> voterLog[i]]}
+    /\ UNCHANGED <<messages, currentTerm, votedFor, candidateVars, logVars>>
 
 ----
 \* Message handlers
@@ -248,7 +306,7 @@ HandleRequestVoteRequest(i, j, m) ==
        /\ \/ grant  /\ votedFor' = [votedFor EXCEPT ![i] = votedFor[i] \cup {j}]
           \/ ~grant /\ UNCHANGED votedFor
        /\ ReplyRequestVote(i, j, m, grant)
-       /\ UNCHANGED <<state, currentTerm, candidateVars, logVars>>
+       /\ UNCHANGED <<state, currentTerm, candidateVars, leaderVars, logVars>>
 
 \* Server i receives a RequestVote response from server j with
 \* m.mterm = currrentTerm[i].
@@ -267,7 +325,7 @@ HandleRequestVoteResponse(i, j, m) ==
        \/ /\ ~m.mvoteGranted
           /\ UNCHANGED <<votesGranted, voterLog>>
     /\ Discard(m)
-    /\ UNCHANGED <<serverVars, logVars>>
+    /\ UNCHANGED <<serverVars, leaderVars, logVars>>
 
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (SERVER, SERVER, MESSAGE) => Bool;
@@ -277,14 +335,14 @@ UpdateTerm(i, j, m) ==
     /\ state' = [state EXCEPT ![i] = Follower]
     /\ votedFor' = [votedFor EXCEPT ![i] = {}]
        \* messages is unchanged so m can be processed further.
-    /\ UNCHANGED <<messages, candidateVars, logVars>>
+    /\ UNCHANGED <<messages, candidateVars, leaderVars, logVars>>
 
 \* Responses with stale terms are ignored.
 \* @type: (SERVER, SERVER, MESSAGE) => Bool;
 DropStaleResponse(i, j, m) ==
     /\ m.mterm < currentTerm[i]
     /\ Discard(m)
-    /\ UNCHANGED <<serverVars, candidateVars, logVars>>
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars>>
 
 \* Receive a message.
 \* @type: (MESSAGE) => Bool;
@@ -306,6 +364,7 @@ Receive(m) ==
 \* @type: Bool;
 Next == \/ \E i \in Server : Timeout(i)
         \/ \E i,j \in Server : RequestVote(i, j)
+        \/ \E i \in Server : BecomeLeader(i)
         \/ \E m \in MessagesInBag(messages) : Receive(m)
 
 \* The specification must start with the initial state and transition according

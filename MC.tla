@@ -25,9 +25,14 @@ AppendEntriesRequest == "AppendEntriesRequest_OF_MESSAGE_TYPE"
 \* @type: MESSAGE_TYPE;
 AppendEntriesResponse == "AppendEntriesResponse_OF_MESSAGE_TYPE"
 
-VARIABLE
+----
+
+VARIABLES
     \* @type: MESSAGE -> Int;
-    messages
+    messages,
+
+    \* @type: Set(ELECTION);
+    elections
 
 VARIABLES
     \* @type: SERVER -> Int;
@@ -53,5 +58,15 @@ VARIABLES
     \* @type: SERVER -> SERVER -> Seq(LOG_ITEM);
     voterLog
 
+VARIABLES
+    \* @type: SERVER -> SERVER -> Int;
+    nextIndex,
+
+    \* @type: SERVER -> SERVER -> Int;
+    matchIndex
+
+----
+
 INSTANCE Raft
+
 ====
