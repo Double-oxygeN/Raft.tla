@@ -29,15 +29,27 @@ CONSTANTS
     \* @type: STATE;
     Leader
 
+CONSTANTS
+    \* Message types:
+    \* @type: MESSAGE_TYPE;
+    RequestVoteRequest,
+    \* @type: MESSAGE_TYPE;
+    RequestVoteResponse,
+    \* @type: MESSAGE_TYPE;
+    AppendEntriesRequest,
+    \* @type: MESSAGE_TYPE;
+    AppendEntriesResponse
+
 ----
 \* Global variables
 
 \* The type representing both requests and responses sent from a server.
-\* @typeAlias: MESSAGE = [];
+\* @typeAlias: MESSAGE = [mtype: MESSAGE_TYPE, mterm: Int, mlastLogIndex: Int,
+\*     mlastLogTerm: Int, msource: SERVER, mdest: SERVER];
 MSGTypeAliases == TRUE
 
 \* The type representing a log item.
-\* @typeAlias: LOG_ITEM = [];
+\* @typeAlias: LOG_ITEM = [term: Int];
 LITypeAliases == TRUE
 
 VARIABLES
@@ -65,6 +77,16 @@ VARIABLES
 
 serverVars == <<currentTerm, state, votedFor>>
 
+VARIABLES
+    \* A sequence of log entries. The index into this sequence is the index of the
+    \* log entry. Unfortunately, the Sequence module defines Head(s) as the entry
+    \* with index 1, so be careful not to use that!
+    \* @type: SERVER -> Seq(LOG_ITEM);
+    log
+
+\* @type: <<SERVER -> Seq(LOG_ITEM)>>;
+logVars == <<log>>
+
 \* The following variables are used only on candidates:
 VARIABLES
     \* The set of servers from which the candidate has received a RequestVote
@@ -87,7 +109,27 @@ candidateVars == <<votesResponded, votesGranted, voterLog>>
 ----
 
 \* All variables; used for stuttering (asserting state hasn't changed).
-vars == <<messages, serverVars>>
+vars == <<messages, serverVars, candidateVars, logVars>>
+
+----
+\* Helpers
+
+\* The term of the last entry in a log, or 0 if the log is empty.
+\* @type: (Seq(LOG_ITEM)) => Int;
+LastTerm(xlog) == IF Len(xlog) = 0 THEN 0 ELSE xlog[Len(xlog)].term
+
+\* Helper for Send and Reply. Given a message m and bag of messages, return a
+\* new bag of messages with one more m in it.
+\* @type: (MESSAGE, MESSAGE -> Int) => MESSAGE -> Int;
+AppendMessage(m, msgs) ==
+    IF m \in DOMAIN msgs THEN
+        [msgs EXCEPT ![m] = IF msgs[m] < 2 THEN msgs[m] + 1 ELSE 2]
+    ELSE
+        msgs @@ (m :> 1)
+
+\* Add a message to the bag of messages.
+\* @type: (MESSAGE) => Bool;
+Send(m) == messages' = AppendMessage(m, messages)
 
 ----
 \* Define initial values for all variables
@@ -105,10 +147,14 @@ InitCandidateVars == /\ votesResponded = [i \in Server |-> {}]
                      /\ votesGranted   = [i \in Server |-> {}]
 
 \* @type: Bool;
+InitLogVars == log = [i \in Server |-> <<>>]
+
+\* @type: Bool;
 Init == /\ messages = [m \in {} |-> 0]
         /\ InitHistoryVars
         /\ InitServerVars
         /\ InitCandidateVars
+        /\ InitLogVars
 
 ----
 \* Define state transitions
@@ -123,12 +169,29 @@ Timeout(i) == /\ state[i] \in {Follower, Candidate}
               /\ votesResponded' = [votesResponded EXCEPT ![i] = {}]
               /\ votesGranted'   = [votesGranted EXCEPT ![i] = {}]
               /\ voterLog'       = [voterLog EXCEPT ![i] = [j \in {} |-> <<>>]]
-              /\ UNCHANGED messages
+              /\ UNCHANGED <<messages, logVars>>
+
+\* @type: (SERVER, SERVER) => Bool;
+SendRequestVoteRequest(src, dest) ==
+    Send([mtype |-> RequestVoteRequest,
+          mterm |-> currentTerm[src],
+          mlastLogIndex |-> Len(log[src]),
+          mlastLogTerm |-> LastTerm(log[src]),
+          msource |-> src,
+          mdest |-> dest])
+
+\* Candidate i sends j a RequestVote request.
+RequestVote(i, j) ==
+    /\ state[i] = Candidate
+    /\ j \notin votesResponded[i]
+    /\ SendRequestVoteRequest(i, j)
+    /\ UNCHANGED <<serverVars, candidateVars, logVars>>
 
 ----
 \* Defines how the variables may transition.
 \* @type: Bool;
-Next == \E i \in Server : Timeout(i)
+Next == \/ \E i \in Server : Timeout(i)
+        \/ \E i,j \in Server : RequestVote(i, j)
 
 \* The specification must start with the initial state and transition according
 \* to Next.

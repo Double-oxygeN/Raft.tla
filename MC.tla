@@ -16,6 +16,15 @@ Candidate == "Candidate_OF_STATE"
 \* @type: STATE;
 Leader == "Leader_OF_STATE"
 
+\* @type: MESSAGE_TYPE;
+RequestVoteRequest == "RequestVoteRequest_OF_MESSAGE_TYPE"
+\* @type: MESSAGE_TYPE;
+RequestVoteResponse == "RequestVoteResponse_OF_MESSAGE_TYPE"
+\* @type: MESSAGE_TYPE;
+AppendEntriesRequest == "AppendEntriesRequest_OF_MESSAGE_TYPE"
+\* @type: MESSAGE_TYPE;
+AppendEntriesResponse == "AppendEntriesResponse_OF_MESSAGE_TYPE"
+
 VARIABLE
     \* @type: MESSAGE -> Int;
     messages
@@ -29,6 +38,10 @@ VARIABLES
 
     \* @type: SERVER -> Seq(SERVER);
     votedFor
+
+VARIABLES
+    \* @type: SERVER -> Seq(LOG_ITEM);
+    log
 
 VARIABLES
     \* @type: SERVER -> Set(SERVER);
