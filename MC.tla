@@ -12,6 +12,9 @@ Server == {
 \* @type: Int;
 MaxClientRequests == 8
 
+\* @type: Int;
+MaxLogLength == 8
+
 \* @type: STATE;
 Follower == "Follower_OF_STATE"
 \* @type: STATE;

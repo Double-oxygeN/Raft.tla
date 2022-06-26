@@ -22,7 +22,11 @@ CONSTANTS
 
     \* Maximum request count from clients.
     \* @type: Int;
-    MaxClientRequests
+    MaxClientRequests,
+
+    \* Maximum log length.
+    \* @type: Int;
+    MaxLogLength
 
 CONSTANTS
     \* Server states.
@@ -334,11 +338,38 @@ BecomeLeader(i) ==
 ClientRequest(i) ==
     /\ state[i] = Leader
     /\ valueRequestedByClient < MaxClientRequests
+    /\ Len(log[i]) < MaxLogLength
     /\ LET entry == [term |-> currentTerm[i], value |-> valueRequestedByClient]
            newLog == Append(log[i], entry)
        IN /\ log' = [log EXCEPT ![i] = newLog]
           /\ valueRequestedByClient' = valueRequestedByClient + 1
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex>>
+
+\* Leader i advances its commitIndex.
+\* This is done as a separate step from handling AppendEntries responses,
+\* in part to minimize atomic regions, and in part so that leaders of
+\* single-server clusters are able to mark entries committed.
+\* @type: (SERVER) => Bool;
+AdvanceCommitIndex(i) ==
+    /\ state[i] = Leader
+    /\ LET \* The set of servers that agree up through index.
+           Agree(index) == {i} \cup {k \in Server : matchIndex[i][k] >= index}
+
+           \* The maximum indices for which a quorum agrees.
+           agreeIndices == {index \in 1..MaxLogLength :
+                                /\ index <= Len(log[i])
+                                /\ Agree(index) \in Quorum}
+
+           \* New value for commitIndex'[i].
+           newCommitIndex ==
+               IF /\ agreeIndices /= {}
+                  /\ log[i][Max(agreeIndices)].term = currentTerm[i]
+               THEN
+                   Max(agreeIndices)
+               ELSE
+                   commitIndex[i]
+       IN commitIndex' = [commitIndex EXCEPT ![i] = newCommitIndex]
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, log, valueRequestedByClient>>
 
 ----
 \* Message handlers
@@ -527,6 +558,7 @@ Next == \/ \E i \in Server : Timeout(i)
         \/ \E i,j \in Server : RequestVote(i, j)
         \/ \E i \in Server : BecomeLeader(i)
         \/ \E i \in Server : ClientRequest(i)
+        \/ \E i \in Server : AdvanceCommitIndex(i)
         \/ \E i,j \in Server : AppendEntries(i, j)
         \/ \E m \in MessagesInBag(messages) : Receive(m)
 
