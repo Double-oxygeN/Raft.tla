@@ -81,4 +81,9 @@ VARIABLES
 
 INSTANCE Raft
 
+\* Invariant: Multiple leaders are not in a term.
+\* @type: Bool;
+ElectionSafety ==
+    \A i,j \in Server : i /= j /\ currentTerm[i] = currentTerm[j] => state[i] /= Leader \/ state[j] /= Leader
+
 ====
