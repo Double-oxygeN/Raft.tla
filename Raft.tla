@@ -565,6 +565,21 @@ Receive(m) ==
 
 \* End of message handlers.
 ----
+\* Network state transitions
+
+\* The network duplicates a message
+\* @type: (MESSAGE) => Bool;
+DuplicateMessageByNetwork(m) ==
+    /\ Send(m)
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars>>
+
+\* The network drops a message
+\* @type: (MESSAGE) => Bool;
+DropMessageByNetwork(m) ==
+    /\ Discard(m)
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars>>
+
+----
 \* Defines how the variables may transition.
 \* @type: Bool;
 Next == \/ \E i \in Server : Restart(i)
@@ -575,6 +590,8 @@ Next == \/ \E i \in Server : Restart(i)
         \/ \E i \in Server : AdvanceCommitIndex(i)
         \/ \E i,j \in Server : AppendEntries(i, j)
         \/ \E m \in MessagesInBag(messages) : Receive(m)
+        \/ \E m \in SingleMessages(messages) : DuplicateMessageByNetwork(m)
+        \/ \E m \in MessagesInBag(messages) : DropMessageByNetwork(m)
 
 \* The specification must start with the initial state and transition according
 \* to Next.
