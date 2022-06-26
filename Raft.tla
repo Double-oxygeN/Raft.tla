@@ -51,7 +51,8 @@ CONSTANTS
 \* @typeAlias: MESSAGE = [mtype: MESSAGE_TYPE, mterm: Int, mlastLogIndex: Int,
 \*     mlastLogTerm: Int, mvoteGranted: Bool, mlog: Seq(LOG_ITEM),
 \*     mprevLogIndex: Int, mprevLogTerm: Int, mentries: Seq(LOG_ITEM),
-\*     mcommitIndex: Int, msource: SERVER, mdest: SERVER];
+\*     mcommitIndex: Int, msuccess: Bool, mmatchIndex: Int,
+\*     msource: SERVER, mdest: SERVER];
 MSGTypeAliases == TRUE
 
 \* The type representing a log item.
@@ -205,6 +206,10 @@ Reply(response, request) ==
 \* Return the minimum value from a set, or undefined if the set is empty.
 \* @type: (Set(Int)) => Int;
 Min(s) == CHOOSE x \in s : \A y \in s : x <= y
+
+\* Return the maximum value from a set, or undefined if the set is empty.
+\* @type: (Set(Int)) => Int;
+Max(s) == CHOOSE x \in s : \A y \in s : x >= y
 
 ----
 \* Define initial values for all variables
@@ -464,6 +469,20 @@ HandleAppendEntriesRequest(i, j, m) ==
              /\ UNCHANGED <<serverVars, valueRequestedByClient>>
        /\ UNCHANGED <<candidateVars, leaderVars>>
 
+\* Server i receives an AppendEntries response from server j with
+\* m.mterm = currentTerm[i].
+\* @type: (SERVER, SERVER, MESSAGE) => Bool;
+HandleAppendEntriesResponse(i, j, m) ==
+    /\ m.mterm = currentTerm[i]
+    /\ \/ /\ m.msuccess \* successful
+          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = m.mmatchIndex + 1]
+          /\ matchIndex' = [matchIndex EXCEPT ![i][j] = m.mmatchIndex]
+       \/ /\ ~m.msuccess \* not successful
+          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({nextIndex[i][j] - 1, 1})]
+          /\ UNCHANGED matchIndex
+    /\ Discard(m)
+    /\ UNCHANGED <<serverVars, candidateVars, logVars, elections>>
+
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (SERVER, SERVER, MESSAGE) => Bool;
 UpdateTerm(i, j, m) ==
@@ -496,6 +515,9 @@ Receive(m) ==
              \/ HandleRequestVoteResponse(i, j, m)
        \/ /\ m.mtype = AppendEntriesRequest
           /\ HandleAppendEntriesRequest(i, j, m)
+       \/ /\ m.mtype = AppendEntriesResponse
+          /\ \/ DropStaleResponse(i, j, m)
+             \/ HandleAppendEntriesResponse(i, j, m)
 
 \* End of message handlers.
 ----
