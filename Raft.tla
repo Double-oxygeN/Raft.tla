@@ -339,6 +339,7 @@ ClientRequest(i) ==
 \* Message handlers
 \* i = recipient, j = sender, m = message
 
+\* @type: (SERVER, SERVER, MESSAGE, Bool) => Bool;
 ReplyRequestVote(src, dest, msg, grant) ==
     Reply([mtype |-> RequestVoteResponse,
            mterm |-> currentTerm[src],
@@ -389,6 +390,79 @@ HandleRequestVoteResponse(i, j, m) ==
     /\ Discard(m)
     /\ UNCHANGED <<serverVars, leaderVars, logVars>>
 
+\* @type: (SERVER, SERVER, MESSAGE) => Bool;
+ReplyAppendEntriesAsReject(src, dest, msg) ==
+    Reply([mtype |-> AppendEntriesResponse,
+           mterm |-> currentTerm[src],
+           msuccess |-> FALSE,
+           mmatchIndex |-> 0,
+           msource |-> src,
+           mdest |-> dest],
+           msg)
+
+\* @type: (SERVER, SERVER, MESSAGE) => Bool;
+ReplyAppendEntriesAsDone(src, dest, msg) ==
+    Reply([mtype |-> AppendEntriesResponse,
+           mterm |-> currentTerm[src],
+           msuccess |-> TRUE,
+           mmatchIndex |-> msg.mprevLogIndex + Len(msg.mentries),
+           msource |-> src,
+           mdest |-> dest],
+           msg)
+
+\* Server i receives an AppendEntries request from server j with
+\* m.mterm <= currentTerm[i]. This just handles m.entries of length 0 or 1, but
+\* implementations could safely accept more by treating them the same as
+\* multiple independent requests of 1 entry.
+\* @type: (SERVER, SERVER, MESSAGE) => Bool;
+HandleAppendEntriesRequest(i, j, m) ==
+    LET logOk == \/ m.mprevLogIndex = 0
+                 \/ /\ m.mprevLogIndex > 0
+                    /\ m.mprevLogIndex <= Len(log[i])
+                    /\ m.mprevLogTerm = log[i][m.mprevLogIndex].term
+    IN /\ m.mterm <= currentTerm[i]
+       /\ \/ \* reject request
+             /\ \/ m.mterm < currentTerm[i]
+                \/ /\ m.mterm = currentTerm[i]
+                   /\ state[i] = Follower
+                   /\ ~logOk
+             /\ ReplyAppendEntriesAsReject(i, j, m)
+             /\ UNCHANGED <<serverVars, logVars>>
+          \/ \* return to follower state
+             /\ m.mterm = currentTerm[i]
+             /\ state[i] = Candidate
+             /\ state' = [state EXCEPT ![i] = Follower]
+             /\ UNCHANGED <<currentTerm, votedFor, logVars, messages>>
+          \/ \* accept requests
+             /\ m.mterm = currentTerm[i]
+             /\ state[i] = Follower
+             /\ logOk
+             /\ LET index == m.mprevLogIndex + 1
+                IN \/ \* already done with request
+                      /\ \/ m.mentries = <<>>
+                         \/ /\ m.mentries /= <<>>
+                            /\ Len(log[i]) >= index
+                            /\ log[i][index].term = m.mentries[1].term
+                         \* This could make out commitIndex decrease (for
+                         \* example if we process an old, duplicated request),
+                         \* but that doesn't really affect anything.
+                      /\ commitIndex' = [commitIndex EXCEPT ![i] = m.mcommitIndex]
+                      /\ ReplyAppendEntriesAsDone(i, j, m)
+                      /\ UNCHANGED <<serverVars, log, valueRequestedByClient>>
+                   \/ \* conflict: remove 1 entry
+                      /\ m.mentries /= <<>>
+                      /\ Len(log[i]) >= index
+                      /\ log[i][index].term /= m.mentries[1].term
+                      /\ LET new == SubSeq(log[i], 1, Len(log[i]) - 1)
+                         IN log' = [log EXCEPT ![i] = new]
+                      /\ UNCHANGED <<serverVars, commitIndex, valueRequestedByClient, messages>>
+                   \/ \* no conflict: append entry
+                      /\ m.mentries /= <<>>
+                      /\ Len(log[i]) = m.mprevLogIndex
+                      /\ log' = [log EXCEPT ![i] = Append(log[i], m.mentries[1])]
+                      /\ UNCHANGED <<serverVars, commitIndex, valueRequestedByClient, messages>>
+       /\ UNCHANGED <<candidateVars, leaderVars>>
+
 \* Any RPC with a newer term causes the recipient to advance its term first.
 \* @type: (SERVER, SERVER, MESSAGE) => Bool;
 UpdateTerm(i, j, m) ==
@@ -419,6 +493,8 @@ Receive(m) ==
        \/ /\ m.mtype = RequestVoteResponse
           /\ \/ DropStaleResponse(i, j, m)
              \/ HandleRequestVoteResponse(i, j, m)
+       \/ /\ m.mtype = AppendEntriesRequest
+          /\ HandleAppendEntriesRequest(i, j, m)
 
 \* End of message handlers.
 ----
