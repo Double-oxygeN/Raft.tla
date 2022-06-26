@@ -448,19 +448,20 @@ HandleAppendEntriesRequest(i, j, m) ==
                          \* but that doesn't really affect anything.
                       /\ commitIndex' = [commitIndex EXCEPT ![i] = m.mcommitIndex]
                       /\ ReplyAppendEntriesAsDone(i, j, m)
-                      /\ UNCHANGED <<serverVars, log, valueRequestedByClient>>
+                      /\ UNCHANGED log
                    \/ \* conflict: remove 1 entry
                       /\ m.mentries /= <<>>
                       /\ Len(log[i]) >= index
                       /\ log[i][index].term /= m.mentries[1].term
                       /\ LET new == SubSeq(log[i], 1, Len(log[i]) - 1)
                          IN log' = [log EXCEPT ![i] = new]
-                      /\ UNCHANGED <<serverVars, commitIndex, valueRequestedByClient, messages>>
+                      /\ UNCHANGED <<commitIndex, messages>>
                    \/ \* no conflict: append entry
                       /\ m.mentries /= <<>>
                       /\ Len(log[i]) = m.mprevLogIndex
                       /\ log' = [log EXCEPT ![i] = Append(log[i], m.mentries[1])]
-                      /\ UNCHANGED <<serverVars, commitIndex, valueRequestedByClient, messages>>
+                      /\ UNCHANGED <<commitIndex, messages>>
+             /\ UNCHANGED <<serverVars, valueRequestedByClient>>
        /\ UNCHANGED <<candidateVars, leaderVars>>
 
 \* Any RPC with a newer term causes the recipient to advance its term first.
