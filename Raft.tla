@@ -102,11 +102,15 @@ VARIABLES
     \* @type: SERVER -> Seq(LOG_ITEM);
     log,
 
+    \* The index of the latest entry in the log the state machine may apply.
+    \* @type: SERVER -> Int;
+    commitIndex,
+
     \* A value which clients request.
     \* @type: Int;
     valueRequestedByClient
 
-logVars == <<log, valueRequestedByClient>>
+logVars == <<log, commitIndex, valueRequestedByClient>>
 
 \* The following variables are used only on candidates:
 VARIABLES
@@ -197,6 +201,10 @@ Discard(m) == messages' = DropMessage(m, messages)
 Reply(response, request) ==
     messages' = DropMessage(request, AppendMessage(response, messages))
 
+\* Return the minimum value from a set, or undefined if the set is empty.
+\* @type: (Set(Int)) => Int;
+Min(s) == CHOOSE x \in s : \A y \in s : x <= y
+
 ----
 \* Define initial values for all variables
 
@@ -222,6 +230,7 @@ InitLeaderVars == /\ nextIndex = [i \in Server |-> [j \in Server |-> 1]]
 
 \* @type: Bool;
 InitLogVars == /\ log = [i \in Server |-> <<>>]
+               /\ commitIndex = [i \in Server |-> 0]
                /\ valueRequestedByClient = 1
 
 \* @type: Bool;
@@ -257,10 +266,43 @@ SendRequestVote(src, dest) ==
           mdest |-> dest])
 
 \* Candidate i sends j a RequestVote request.
+\* @type: (SERVER, SERVER) => Bool;
 RequestVote(i, j) ==
     /\ state[i] = Candidate
     /\ j \notin votesResponded[i]
     /\ SendRequestVote(i, j)
+    /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars>>
+
+\* @type: (SERVER, SERVER) => Bool;
+SendAppendEntries(src, dest) ==
+    LET prevLogIndex == nextIndex[src][dest] - 1
+        prevLogTerm == IF prevLogIndex > 0 THEN
+                            log[src][prevLogIndex].term
+                        ELSE
+                            0
+        \* Send up to 1 entry, constrained by the end of the log.
+        lastEntry == Min({Len(log[src]), nextIndex[src][dest]})
+        entries == SubSeq(log[src], nextIndex[src][dest], lastEntry)
+    IN Send([mtype |-> AppendEntriesRequest,
+             mterm |-> currentTerm[src],
+             mprevLogIndex |-> prevLogIndex,
+             mprevLogTerm |-> prevLogTerm,
+             mentries |-> entries,
+             \* mlog is used as a history variable for the proof.
+             \* It would not exist in a real implementation.
+             mlog |-> log[src],
+             mcommitIndex |-> Min({commitIndex[src], lastEntry}),
+             msource |-> src,
+             mdest |-> dest])
+
+\* Leader i sends j an AppendEntries request containing up to 1 entry.
+\* While implementations may want to send more than 1 at a time, this spec uses
+\* just 1 because it minimizes atomic regions without loss of generality.
+\* @type: (SERVER, SERVER) => Bool;
+AppendEntries(i, j) ==
+    /\ i /= j
+    /\ state[i] = Leader
+    /\ SendAppendEntries(i, j)
     /\ UNCHANGED <<serverVars, candidateVars, leaderVars, logVars>>
 
 \* Candidate i transitions to leader.
@@ -290,7 +332,7 @@ ClientRequest(i) ==
            newLog == Append(log[i], entry)
        IN /\ log' = [log EXCEPT ![i] = newLog]
           /\ valueRequestedByClient' = valueRequestedByClient + 1
-    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars>>
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex>>
 
 ----
 \* Message handlers

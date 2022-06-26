@@ -51,6 +51,9 @@ VARIABLES
     \* @type: SERVER -> Seq(LOG_ITEM);
     log,
 
+    \* @type: SERVER -> Int;
+    commitIndex,
+
     \* @type: Int;
     valueRequestedByClient
 
