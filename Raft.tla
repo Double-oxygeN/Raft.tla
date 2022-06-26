@@ -220,12 +220,12 @@ Max(s) == CHOOSE x \in s : \A y \in s : x >= y
 
 \* @type: Bool;
 InitHistoryVars == /\ elections = {}
-                   /\ voterLog = [i \in Server |-> [j \in {} |-> <<>>]]
+                   /\ voterLog  = [i \in Server |-> [j \in {} |-> <<>>]]
 
 \* @type: Bool;
 InitServerVars == /\ currentTerm = [i \in Server |-> 1]
-                  /\ state = [i \in Server |-> Follower]
-                  /\ votedFor = [i \in Server |-> {}]
+                  /\ state       = [i \in Server |-> Follower]
+                  /\ votedFor    = [i \in Server |-> {}]
 
 \* @type: Bool;
 InitCandidateVars == /\ votesResponded = [i \in Server |-> {}]
@@ -235,12 +235,12 @@ InitCandidateVars == /\ votesResponded = [i \in Server |-> {}]
 \* leader does not send itself messages. It's still easier to include these
 \* in the functions.
 \* @type: Bool;
-InitLeaderVars == /\ nextIndex = [i \in Server |-> [j \in Server |-> 1]]
+InitLeaderVars == /\ nextIndex  = [i \in Server |-> [j \in Server |-> 1]]
                   /\ matchIndex = [i \in Server |-> [j \in Server |-> 0]]
 
 \* @type: Bool;
-InitLogVars == /\ log = [i \in Server |-> <<>>]
-               /\ commitIndex = [i \in Server |-> 0]
+InitLogVars == /\ log                    = [i \in Server |-> <<>>]
+               /\ commitIndex            = [i \in Server |-> 0]
                /\ valueRequestedByClient = 1
 
 \* @type: Bool;
@@ -258,23 +258,23 @@ Init == /\ messages = [m \in {} |-> 0]
 \* It loses everything but its currentTerm, votedFor, and log.
 \* @type: (SERVER) => Bool;
 Restart(i) ==
-    /\ state' = [state EXCEPT ![i] = Follower]
+    /\ state'          = [state EXCEPT ![i] = Follower]
     /\ votesResponded' = [votesResponded EXCEPT ![i] = {}]
-    /\ votesGranted' = [votesGranted EXCEPT ![i] = {}]
-    /\ voterLog' = [voterLog EXCEPT ![i] = [j \in {} |-> <<>>]]
-    /\ nextIndex' = [nextIndex EXCEPT ![i] = [j \in Server |-> 1]]
-    /\ matchIndex' = [matchIndex EXCEPT ![i] = [j \in Server |-> 0]]
-    /\ commitIndex' = [commitIndex EXCEPT ![i] = 0]
+    /\ votesGranted'   = [votesGranted EXCEPT ![i] = {}]
+    /\ voterLog'       = [voterLog EXCEPT ![i] = [j \in {} |-> <<>>]]
+    /\ nextIndex'      = [nextIndex EXCEPT ![i] = [j \in Server |-> 1]]
+    /\ matchIndex'     = [matchIndex EXCEPT ![i] = [j \in Server |-> 0]]
+    /\ commitIndex'    = [commitIndex EXCEPT ![i] = 0]
     /\ UNCHANGED <<messages, currentTerm, votedFor, log, elections, valueRequestedByClient>>
 
 \* Server i times out and starts a new election.
 \* @type: (SERVER) => Bool;
 Timeout(i) == /\ state[i] \in {Follower, Candidate}
-              /\ state' = [state EXCEPT ![i] = Candidate]
-              /\ currentTerm' = [currentTerm EXCEPT ![i] = currentTerm[i] + 1]
+              /\ state'          = [state EXCEPT ![i] = Candidate]
+              /\ currentTerm'    = [currentTerm EXCEPT ![i] = currentTerm[i] + 1]
               \* Most implementations would probably just set the local vote
               \* atomically, but messaging localhost for it is weaker.
-              /\ votedFor' = [votedFor EXCEPT ![i] = {}]
+              /\ votedFor'       = [votedFor EXCEPT ![i] = {}]
               /\ votesResponded' = [votesResponded EXCEPT ![i] = {}]
               /\ votesGranted'   = [votesGranted EXCEPT ![i] = {}]
               /\ voterLog'       = [voterLog EXCEPT ![i] = [j \in {} |-> <<>>]]
@@ -282,12 +282,12 @@ Timeout(i) == /\ state[i] \in {Follower, Candidate}
 
 \* @type: (SERVER, SERVER) => Bool;
 SendRequestVote(src, dest) ==
-    Send([mtype |-> RequestVoteRequest,
-          mterm |-> currentTerm[src],
+    Send([mtype         |-> RequestVoteRequest,
+          mterm         |-> currentTerm[src],
           mlastLogIndex |-> Len(log[src]),
-          mlastLogTerm |-> LastTerm(log[src]),
-          msource |-> src,
-          mdest |-> dest])
+          mlastLogTerm  |-> LastTerm(log[src]),
+          msource       |-> src,
+          mdest         |-> dest])
 
 \* Candidate i sends j a RequestVote request.
 \* @type: (SERVER, SERVER) => Bool;
@@ -300,24 +300,24 @@ RequestVote(i, j) ==
 \* @type: (SERVER, SERVER) => Bool;
 SendAppendEntries(src, dest) ==
     LET prevLogIndex == nextIndex[src][dest] - 1
-        prevLogTerm == IF prevLogIndex > 0 THEN
+        prevLogTerm  == IF prevLogIndex > 0 THEN
                             log[src][prevLogIndex].term
                         ELSE
                             0
         \* Send up to 1 entry, constrained by the end of the log.
-        lastEntry == Min({Len(log[src]), nextIndex[src][dest]})
-        entries == SubSeq(log[src], nextIndex[src][dest], lastEntry)
-    IN Send([mtype |-> AppendEntriesRequest,
-             mterm |-> currentTerm[src],
+        lastEntry    == Min({Len(log[src]), nextIndex[src][dest]})
+        entries      == SubSeq(log[src], nextIndex[src][dest], lastEntry)
+    IN Send([mtype         |-> AppendEntriesRequest,
+             mterm         |-> currentTerm[src],
              mprevLogIndex |-> prevLogIndex,
-             mprevLogTerm |-> prevLogTerm,
-             mentries |-> entries,
+             mprevLogTerm  |-> prevLogTerm,
+             mentries      |-> entries,
              \* mlog is used as a history variable for the proof.
              \* It would not exist in a real implementation.
-             mlog |-> log[src],
-             mcommitIndex |-> Min({commitIndex[src], lastEntry}),
-             msource |-> src,
-             mdest |-> dest])
+             mlog          |-> log[src],
+             mcommitIndex  |-> Min({commitIndex[src], lastEntry}),
+             msource       |-> src,
+             mdest         |-> dest])
 
 \* Leader i sends j an AppendEntries request containing up to 1 entry.
 \* While implementations may want to send more than 1 at a time, this spec uses
@@ -334,16 +334,14 @@ AppendEntries(i, j) ==
 BecomeLeader(i) ==
     /\ state[i] = Candidate
     /\ votesGranted[i] \in Quorum
-    /\ state' = [state EXCEPT ![i] = Leader]
-    /\ nextIndex' = [nextIndex EXCEPT ![i] =
-                        [j \in Server |-> Len(log[i]) + 1]]
-    /\ matchIndex' = [matchIndex EXCEPT ![i] =
-                        [j \in Server |-> 0]]
-    /\ elections' = elections \cup
-                        {[eterm |-> currentTerm[i],
-                          eleader |-> i,
-                          elog |-> log[i],
-                          evotes |-> votesGranted[i],
+    /\ state'      = [state EXCEPT ![i] = Leader]
+    /\ nextIndex'  = [nextIndex EXCEPT ![i] = [j \in Server |-> Len(log[i]) + 1]]
+    /\ matchIndex' = [matchIndex EXCEPT ![i] = [j \in Server |-> 0]]
+    /\ elections'  = elections \cup
+                        {[eterm     |-> currentTerm[i],
+                          eleader   |-> i,
+                          elog      |-> log[i],
+                          evotes    |-> votesGranted[i],
                           evoterLog |-> voterLog[i]]}
     /\ UNCHANGED <<messages, currentTerm, votedFor, candidateVars, logVars>>
 
@@ -353,9 +351,9 @@ ClientRequest(i) ==
     /\ state[i] = Leader
     /\ valueRequestedByClient < MaxClientRequests
     /\ Len(log[i]) < MaxLogLength
-    /\ LET entry == [term |-> currentTerm[i], value |-> valueRequestedByClient]
+    /\ LET entry  == [term |-> currentTerm[i], value |-> valueRequestedByClient]
            newLog == Append(log[i], entry)
-       IN /\ log' = [log EXCEPT ![i] = newLog]
+       IN /\ log'                    = [log EXCEPT ![i] = newLog]
           /\ valueRequestedByClient' = valueRequestedByClient + 1
     /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars, commitIndex>>
 
@@ -391,12 +389,12 @@ AdvanceCommitIndex(i) ==
 
 \* @type: (SERVER, SERVER, MESSAGE, Bool) => Bool;
 ReplyRequestVote(src, dest, msg, grant) ==
-    Reply([mtype |-> RequestVoteResponse,
-           mterm |-> currentTerm[src],
+    Reply([mtype        |-> RequestVoteResponse,
+           mterm        |-> currentTerm[src],
            mvoteGranted |-> grant,
-           mlog |-> log[src],
-           msource |-> src,
-           mdest |-> dest],
+           mlog         |-> log[src],
+           msource      |-> src,
+           mdest        |-> dest],
            msg)
 
 \* Server i receives a RequestVote request from server j with
@@ -442,22 +440,22 @@ HandleRequestVoteResponse(i, j, m) ==
 
 \* @type: (SERVER, SERVER, MESSAGE) => Bool;
 ReplyAppendEntriesAsReject(src, dest, msg) ==
-    Reply([mtype |-> AppendEntriesResponse,
-           mterm |-> currentTerm[src],
-           msuccess |-> FALSE,
+    Reply([mtype       |-> AppendEntriesResponse,
+           mterm       |-> currentTerm[src],
+           msuccess    |-> FALSE,
            mmatchIndex |-> 0,
-           msource |-> src,
-           mdest |-> dest],
+           msource     |-> src,
+           mdest       |-> dest],
            msg)
 
 \* @type: (SERVER, SERVER, MESSAGE) => Bool;
 ReplyAppendEntriesAsDone(src, dest, msg) ==
-    Reply([mtype |-> AppendEntriesResponse,
-           mterm |-> currentTerm[src],
-           msuccess |-> TRUE,
+    Reply([mtype       |-> AppendEntriesResponse,
+           mterm       |-> currentTerm[src],
+           msuccess    |-> TRUE,
            mmatchIndex |-> msg.mprevLogIndex + Len(msg.mentries),
-           msource |-> src,
-           mdest |-> dest],
+           msource     |-> src,
+           mdest       |-> dest],
            msg)
 
 \* Server i receives an AppendEntries request from server j with
@@ -473,18 +471,18 @@ HandleAppendEntriesRequest(i, j, m) ==
     IN /\ m.mterm <= currentTerm[i]
        /\ \/ \* reject request
              /\ \/ m.mterm < currentTerm[i]
-                \/ /\ m.mterm = currentTerm[i]
+                \/ /\ m.mterm  = currentTerm[i]
                    /\ state[i] = Follower
                    /\ ~logOk
              /\ ReplyAppendEntriesAsReject(i, j, m)
              /\ UNCHANGED <<serverVars, logVars>>
           \/ \* return to follower state
-             /\ m.mterm = currentTerm[i]
+             /\ m.mterm  = currentTerm[i]
              /\ state[i] = Candidate
              /\ state' = [state EXCEPT ![i] = Follower]
              /\ UNCHANGED <<currentTerm, votedFor, logVars, messages>>
           \/ \* accept requests
-             /\ m.mterm = currentTerm[i]
+             /\ m.mterm  = currentTerm[i]
              /\ state[i] = Follower
              /\ logOk
              /\ LET index == m.mprevLogIndex + 1
@@ -520,7 +518,7 @@ HandleAppendEntriesRequest(i, j, m) ==
 HandleAppendEntriesResponse(i, j, m) ==
     /\ m.mterm = currentTerm[i]
     /\ \/ /\ m.msuccess \* successful
-          /\ nextIndex' = [nextIndex EXCEPT ![i][j] = m.mmatchIndex + 1]
+          /\ nextIndex'  = [nextIndex EXCEPT ![i][j] = m.mmatchIndex + 1]
           /\ matchIndex' = [matchIndex EXCEPT ![i][j] = m.mmatchIndex]
        \/ /\ ~m.msuccess \* not successful
           /\ nextIndex' = [nextIndex EXCEPT ![i][j] = Max({nextIndex[i][j] - 1, 1})]
@@ -533,8 +531,8 @@ HandleAppendEntriesResponse(i, j, m) ==
 UpdateTerm(i, j, m) ==
     /\ m.mterm > currentTerm[i]
     /\ currentTerm' = [currentTerm EXCEPT ![i] = m.mterm]
-    /\ state' = [state EXCEPT ![i] = Follower]
-    /\ votedFor' = [votedFor EXCEPT ![i] = {}]
+    /\ state'       = [state EXCEPT ![i] = Follower]
+    /\ votedFor'    = [votedFor EXCEPT ![i] = {}]
        \* messages is unchanged so m can be processed further.
     /\ UNCHANGED <<messages, candidateVars, leaderVars, logVars>>
 
