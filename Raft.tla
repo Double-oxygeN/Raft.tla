@@ -427,6 +427,7 @@ Next == \/ \E i \in Server : Timeout(i)
         \/ \E i,j \in Server : RequestVote(i, j)
         \/ \E i \in Server : BecomeLeader(i)
         \/ \E i \in Server : ClientRequest(i)
+        \/ \E i,j \in Server : AppendEntries(i, j)
         \/ \E m \in MessagesInBag(messages) : Receive(m)
 
 \* The specification must start with the initial state and transition according
