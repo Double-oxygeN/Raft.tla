@@ -254,6 +254,19 @@ Init == /\ messages = [m \in {} |-> 0]
 ----
 \* Define state transitions
 
+\* Server i restarts from stable storage.
+\* It loses everything but its currentTerm, votedFor, and log.
+\* @type: (SERVER) => Bool;
+Restart(i) ==
+    /\ state' = [state EXCEPT ![i] = Follower]
+    /\ votesResponded' = [votesResponded EXCEPT ![i] = {}]
+    /\ votesGranted' = [votesGranted EXCEPT ![i] = {}]
+    /\ voterLog' = [voterLog EXCEPT ![i] = [j \in {} |-> <<>>]]
+    /\ nextIndex' = [nextIndex EXCEPT ![i] = [j \in Server |-> 1]]
+    /\ matchIndex' = [matchIndex EXCEPT ![i] = [j \in Server |-> 0]]
+    /\ commitIndex' = [commitIndex EXCEPT ![i] = 0]
+    /\ UNCHANGED <<messages, currentTerm, votedFor, log, elections, valueRequestedByClient>>
+
 \* Server i times out and starts a new election.
 Timeout(i) == /\ state[i] \in {Follower, Candidate}
               /\ state' = [state EXCEPT ![i] = Candidate]
@@ -554,7 +567,8 @@ Receive(m) ==
 ----
 \* Defines how the variables may transition.
 \* @type: Bool;
-Next == \/ \E i \in Server : Timeout(i)
+Next == \/ \E i \in Server : Restart(i)
+        \/ \E i \in Server : Timeout(i)
         \/ \E i,j \in Server : RequestVote(i, j)
         \/ \E i \in Server : BecomeLeader(i)
         \/ \E i \in Server : ClientRequest(i)
