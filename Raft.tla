@@ -268,6 +268,7 @@ Restart(i) ==
     /\ UNCHANGED <<messages, currentTerm, votedFor, log, elections, valueRequestedByClient>>
 
 \* Server i times out and starts a new election.
+\* @type: (SERVER) => Bool;
 Timeout(i) == /\ state[i] \in {Follower, Candidate}
               /\ state' = [state EXCEPT ![i] = Candidate]
               /\ currentTerm' = [currentTerm EXCEPT ![i] = currentTerm[i] + 1]
