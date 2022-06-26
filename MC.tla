@@ -9,6 +9,9 @@ Server == {
     "sv5_OF_SERVER"
     }
 
+\* @type: Int;
+MaxClientRequests == 8
+
 \* @type: STATE;
 Follower == "Follower_OF_STATE"
 \* @type: STATE;
@@ -46,7 +49,10 @@ VARIABLES
 
 VARIABLES
     \* @type: SERVER -> Seq(LOG_ITEM);
-    log
+    log,
+
+    \* @type: Int;
+    valueRequestedByClient
 
 VARIABLES
     \* @type: SERVER -> Set(SERVER);

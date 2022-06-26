@@ -16,9 +16,13 @@
 EXTENDS Naturals, FiniteSets, Sequences, TLC
 
 CONSTANTS
-    \* The set of server IDs
+    \* The set of server IDs.
     \* @type: Set(SERVER);
-    Server
+    Server,
+
+    \* Maximum request count from clients.
+    \* @type: Int;
+    MaxClientRequests
 
 CONSTANTS
     \* Server states.
@@ -50,7 +54,7 @@ CONSTANTS
 MSGTypeAliases == TRUE
 
 \* The type representing a log item.
-\* @typeAlias: LOG_ITEM = [term: Int];
+\* @typeAlias: LOG_ITEM = [term: Int, value: Int];
 LITypeAliases == TRUE
 
 \* The type representing a history of election.
@@ -96,10 +100,13 @@ VARIABLES
     \* log entry. Unfortunately, the Sequence module defines Head(s) as the entry
     \* with index 1, so be careful not to use that!
     \* @type: SERVER -> Seq(LOG_ITEM);
-    log
+    log,
 
-\* @type: <<SERVER -> Seq(LOG_ITEM)>>;
-logVars == <<log>>
+    \* A value which clients request.
+    \* @type: Int;
+    valueRequestedByClient
+
+logVars == <<log, valueRequestedByClient>>
 
 \* The following variables are used only on candidates:
 VARIABLES
@@ -214,7 +221,8 @@ InitLeaderVars == /\ nextIndex = [i \in Server |-> [j \in Server |-> 1]]
                   /\ matchIndex = [i \in Server |-> [j \in Server |-> 0]]
 
 \* @type: Bool;
-InitLogVars == log = [i \in Server |-> <<>>]
+InitLogVars == /\ log = [i \in Server |-> <<>>]
+               /\ valueRequestedByClient = 1
 
 \* @type: Bool;
 Init == /\ messages = [m \in {} |-> 0]
@@ -272,6 +280,17 @@ BecomeLeader(i) ==
                           evotes |-> votesGranted[i],
                           evoterLog |-> voterLog[i]]}
     /\ UNCHANGED <<messages, currentTerm, votedFor, candidateVars, logVars>>
+
+\* Leader i receives a client request to add v to the log.
+\* @type: (SERVER) => Bool;
+ClientRequest(i) ==
+    /\ state[i] = Leader
+    /\ valueRequestedByClient < MaxClientRequests
+    /\ LET entry == [term |-> currentTerm[i], value |-> valueRequestedByClient]
+           newLog == Append(log[i], entry)
+       IN /\ log' = [log EXCEPT ![i] = newLog]
+          /\ valueRequestedByClient' = valueRequestedByClient + 1
+    /\ UNCHANGED <<messages, serverVars, candidateVars, leaderVars>>
 
 ----
 \* Message handlers
@@ -365,6 +384,7 @@ Receive(m) ==
 Next == \/ \E i \in Server : Timeout(i)
         \/ \E i,j \in Server : RequestVote(i, j)
         \/ \E i \in Server : BecomeLeader(i)
+        \/ \E i \in Server : ClientRequest(i)
         \/ \E m \in MessagesInBag(messages) : Receive(m)
 
 \* The specification must start with the initial state and transition according
