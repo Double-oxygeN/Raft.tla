@@ -50,7 +50,8 @@ CONSTANTS
 \* The type representing both requests and responses sent from a server.
 \* @typeAlias: MESSAGE = [mtype: MESSAGE_TYPE, mterm: Int, mlastLogIndex: Int,
 \*     mlastLogTerm: Int, mvoteGranted: Bool, mlog: Seq(LOG_ITEM),
-\*     msource: SERVER, mdest: SERVER];
+\*     mprevLogIndex: Int, mprevLogTerm: Int, mentries: Seq(LOG_ITEM),
+\*     mcommitIndex: Int, msource: SERVER, mdest: SERVER];
 MSGTypeAliases == TRUE
 
 \* The type representing a log item.
