@@ -11,6 +11,8 @@
 \*   - Annotate types for Apalache
 \*   - Change the codomain of the variable `votedFor` from `Server \cup { Nil }` to `Set(SERVER)`
 \*   - Use `clientRequest` instead of `v \in Value` (thanks to @jinlmsft)
+\*   - Remove allLogs variable
+\*   - ... plus refactoring
 \*
 
 EXTENDS Naturals, FiniteSets, Sequences, TLC
