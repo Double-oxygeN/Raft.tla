@@ -411,7 +411,7 @@ HandleRequestVoteRequest(i, j, m) ==
         grant == /\ m.mterm = currentTerm[i]
                  /\ logOk
                  \* The first-come-first-served basis
-                 /\ votedFor[i] \in {{}, {j}}
+                 /\ \A k \in votedFor[i] : k = j
     IN \* When m.mterm > currentTerm[i], first update the voter's term
        /\ m.mterm <= currentTerm[i]
        /\ \/ grant  /\ votedFor' = [votedFor EXCEPT ![i] = votedFor[i] \cup {j}]
