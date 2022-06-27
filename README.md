@@ -17,7 +17,8 @@ apalache check --config=MC.cfg MC
 
 ### Invariants
 
-Currently there is no invariants to be checked.
+* Election Safety
+  * Multiple leaders are not in the same term.
 
 ## License
 
