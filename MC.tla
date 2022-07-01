@@ -4,9 +4,7 @@
 Server == {
     "sv1_OF_SERVER",
     "sv2_OF_SERVER",
-    "sv3_OF_SERVER",
-    "sv4_OF_SERVER",
-    "sv5_OF_SERVER"
+    "sv3_OF_SERVER"
     }
 
 \* @type: Int;
