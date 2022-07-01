@@ -1,9 +1,12 @@
 ---- MODULE Raft ----
-\* Formal specification for the Raft consensus algorithm.
+\* This is the formal specification for the Raft consensus algorithm.
 \*
-\* Original document is by Diego Ongaro, 2014 (CC BY-4.0).
+\* Copyright 2014 Diego Ongaro.
+\* This work is licensed under the Creative Commons Attribution-4.0
+\* International License https://creativecommons.org/licenses/by/4.0/
 \* Source: https://github.com/ongardie/raft.tla
-\* Please check https://creativecommons.org/licenses/by/4.0 for more information.
+\*
+\* Copyright 2022 Yuya Shiratori.
 \* This document includes some adaptions by Yuya Shiratori.
 \*
 \* Changes:

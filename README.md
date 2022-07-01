@@ -25,4 +25,7 @@ apalache check --config=MC.cfg MC
 The TLA+ document is [originally created by Diego Ongaro](https://github.com/ongardie/raft.tla),
 under [Creative Commonse Attribution-4.0](https://creativecommons.org/licenses/by/4.0).
 
-My revision is described on `Raft.tla` as comments.
+My revision is described in `Raft.tla` as comments.
+
+Copyright 2014 Diego Ongaro  
+Copyright 2022 Yuya Shiratori
